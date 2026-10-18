@@ -332,10 +332,29 @@ CATS.sort((a,b)=>{
 });
 const LTR = ['A','B','C','D'];
 
-function resolveCount(cat){
-  const st = DB.settings || {count:10, catCount:{}};
-  if(cat && cat !== '全部' && st.catCount[cat]) return Math.min(st.catCount[cat], catCount(cat));
-  return Math.min(st.count, QUESTIONS.length);
+// 混合练习：每个分类出几道题，0 表示该分类不出题
+function catMixed(cat){
+  const st = DB.settings;
+  const raw = (st.catCount[cat] !== undefined) ? st.catCount[cat] : st.count;
+  return Math.max(0, Math.min(raw, catCount(cat)));
+}
+function mixedTotal(){ return CATS.reduce((s,c)=>s + catMixed(c), 0); }
+function mixedJoined(){ return CATS.filter(c=>catMixed(c) > 0).length; }
+// 单独练某个分类：设为 0 时改为该分类全部题目（否则点进去会一道题都没有）
+function soloCount(cat){
+  const n = catMixed(cat);
+  return n > 0 ? n : catCount(cat);
+}
+function mixedPicks(){
+  const out = [];
+  CATS.forEach(c=>{
+    const n = catMixed(c);
+    if(n > 0){
+      const qs = QUESTIONS.filter(q=>q.c===c);
+      out.push.apply(out, pickWeighted(qs, Math.min(n, qs.length)));
+    }
+  });
+  return out;
 }
 
 /* ---------- 工具 ---------- */
@@ -430,12 +449,20 @@ function go(view){
 }
 function startSession(opts){
   opts = opts || {};
-  let pool;
-  if(opts.ids) pool = opts.ids.map(id=>QMAP[id]).filter(Boolean);
-  else if(opts.cat && opts.cat !== '全部') pool = QUESTIONS.filter(q=>q.c===opts.cat);
-  else pool = QUESTIONS;
-  const n = Math.min(opts.count || resolveCount(opts.cat), pool.length);
-  const picked = pickWeighted(pool, n);
+  let picked;
+  if(opts.ids){
+    const pool = opts.ids.map(id=>QMAP[id]).filter(Boolean);
+    picked = pickWeighted(pool, Math.min(10, pool.length));
+  }else if(opts.cat && opts.cat !== '全部'){
+    const pool = QUESTIONS.filter(q=>q.c===opts.cat);
+    picked = pickWeighted(pool, Math.min(soloCount(opts.cat), pool.length));
+  }else{
+    picked = mixedPicks();
+    if(!picked.length){
+      picked = pickWeighted(QUESTIONS, QUESTIONS.length);
+      toast('所有分类都设为 0 题了，本轮改为全部题目');
+    }
+  }
   state.session = {
     ids: picked.map(q=>q.id), idx: 0, picks: {},
     startAt: Date.now(), cat: opts.cat || '全部', mode: opts.mode || 'normal'
@@ -449,12 +476,12 @@ function startSession(opts){
 /* ---------- 首页 ---------- */
 function viewHome(){
   const seen = uniqueSeen(), total = QUESTIONS.length, wrongN = Object.keys(DB.wrong).length;
-  const CNT = resolveCount();
+  const CNT = mixedTotal(), JOINED = mixedJoined();
   return `
   <div class="wrap">
     <div class="hero">
       <h2>今天刷 ${CNT} 道，面试少踩一个坑</h2>
-      <p>题库来自《前端热门面试题 200 道速记通关版》，共 ${total} 道单选题。每轮随机抽 ${CNT} 道，选完立即判分并给出解析，答错的自动进错题本。</p>
+      <p>题库来自《前端热门面试题 200 道速记通关版》，共 ${total} 道单选题。混合练习按各分类设定抽题，当前 ${JOINED} 个分类参加、合计 ${CNT} 道；把某个分类设为 0 就可以跳过它。</p>
       <div class="hero-actions">
         <button class="btn primary" data-action="start">开始一轮 ${CNT} 题</button>
         <button class="btn ghost" data-action="go" data-view="random">随机来一题</button>
@@ -482,12 +509,12 @@ function viewHome(){
     <div class="sec-title"><h3>按分类练习</h3><span>${CATS.length} 个分类 · 点击直接开始</span></div>
     <div class="cats">
       ${CATS.map(c=>{
-        const tot = catCount(c), done = catDone(c);
-        const n = Math.min(resolveCount(c), tot);
-        return `<button class="cat" data-action="cat" data-cat="${esc(c)}">
+        const tot = catCount(c), done = catDone(c), n = catMixed(c);
+        const off = n <= 0;
+        return `<button class="cat" data-action="cat" data-cat="${esc(c)}" ${off?'style="opacity:.62"':''}>
           <div class="cat-top"><span class="cat-name">${esc(c)}</span><span class="cat-num">${done}/${tot}</span></div>
           <div class="bar"><i style="width:${tot?Math.round(done/tot*100):0}%"></i></div>
-          <div class="cat-sub">出题 ${n} 题</div>
+          <div class="cat-sub">${off ? '不参加混合练习' : '混合出题 ' + n + ' 题'}</div>
         </button>`;
       }).join('')}
     </div>
@@ -512,28 +539,30 @@ function viewHome(){
 
 function viewSettings(){
   const st = DB.settings;
+  const CNT = mixedTotal(), JOINED = mixedJoined();
   return `
   <div class="mask" data-action="close-modal">
     <div class="modal">
       <div class="modal-h"><h3>出题设置</h3><button class="x" data-action="close-modal">✕</button></div>
       <div class="modal-b">
-        <div style="font-size:12.5px;color:var(--muted)">全部分类练习一轮的题量</div>
+        <div style="font-size:12.5px;color:var(--muted)">混合练习一轮共 <b style="color:var(--primary)">${CNT}</b> 题，${JOINED}/${CATS.length} 个分类参加</div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:10px">一键设置所有分类的出题数（0 = 该分类不出题）</div>
         <div class="counts">
-          ${[5,10,20,30].map(v=>`<button class="fchip ${st.count===v?'on':''}" data-action="pick-count" data-v="${v}">${v} 题</button>`).join('')}
+          ${[0,5,10,20,30].map(v=>`<button class="fchip ${st.count===v?'on':''}" data-action="pick-count" data-v="${v}">${v<=0?'全部设为 0':v + ' 题'}</button>`).join('')}
         </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin:18px 0 6px">
-          <span style="font-size:12.5px;color:var(--muted)">各分类单独练习的题量（最多为该分类题数）</span>
-          <button class="btn sm ghost" data-action="reset-cat-count">全部恢复为 ${st.count}</button>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 6px">
+          <span style="font-size:12.5px;color:var(--muted)">逐个调整（上限为该分类题数，可直接点到 0）</span>
+          <button class="btn sm ghost" data-action="reset-cat-count">全部恢复为 10</button>
         </div>
         <div>
           ${CATS.map(c=>{
             const tot = catCount(c);
-            const n = Math.min(st.catCount[c] || st.count, tot);
+            const n = catMixed(c);
             return `<div class="steprow">
               <span class="catn">${esc(c)}<em>共 ${tot} 题</em></span>
               <span class="step">
-                <button class="sbtn" data-action="cat-count" data-cat="${esc(c)}" data-d="-1" ${n<=1?'disabled':''}>−</button>
-                <span class="sv">${n}</span>
+                <button class="sbtn" data-action="cat-count" data-cat="${esc(c)}" data-d="-1" ${n<=0?'disabled':''}>−</button>
+                <span class="sv">${n<=0 ? '不参加' : n}</span>
                 <button class="sbtn" data-action="cat-count" data-cat="${esc(c)}" data-d="1" ${n>=tot?'disabled':''}>+</button>
               </span>
             </div>`;
@@ -930,14 +959,24 @@ document.addEventListener('click', e=>{
     case 'start': startSession(); break;
     case 'settings': state.showSettings = true; render(); break;
     case 'close-modal': state.showSettings = false; render(); break;
-    case 'pick-count': DB.settings.count = Number(el.dataset.v); save(); render(); break;
+    case 'pick-count': {
+      const v = Number(el.dataset.v);
+      DB.settings.count = v;
+      DB.settings.catCount = {};
+      CATS.forEach(c=>{ DB.settings.catCount[c] = v; });
+      save(); render(); break;
+    }
     case 'cat-count': {
       const c = el.dataset.cat, d = Number(el.dataset.d), tot = catCount(c);
       let n = (DB.settings.catCount[c] || DB.settings.count) + d;
-      DB.settings.catCount[c] = Math.max(1, Math.min(tot, n));
+      DB.settings.catCount[c] = Math.max(0, Math.min(tot, n));
       save(); render(); break;
     }
-    case 'reset-cat-count': DB.settings.catCount = {}; save(); render(); break;
+    case 'reset-cat-count': {
+      DB.settings.count = 10; DB.settings.catCount = {};
+      CATS.forEach(c=>{ DB.settings.catCount[c] = 10; });
+      save(); render(); break;
+    }
     case 'resume': state.session = DB.session; state.view='practice'; render(); break;
     case 'go': go(el.dataset.view); break;
     case 'cat': startSession({cat: el.dataset.cat}); break;
