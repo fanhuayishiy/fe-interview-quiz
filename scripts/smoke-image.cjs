@@ -13,7 +13,7 @@ async function main(){
     await docker('run','-d','--name',name,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges:true','--tmpfs','/tmp:size=16m,mode=1777',
       '--mount',`type=volume,source=${volume},target=/app/data`,'-p','127.0.0.1::3000',
       '-e','ADMIN_USERNAME=ci','-e',`ADMIN_PASSWORD=${password}`,'-e','PUBLIC_URL=http://localhost','-e','COOKIE_SECURE=false',image);
-    const address=(await docker('port',name,'3000/tcp')).stdout.trim().split('\n')[0];
+    let address=(await docker('port',name,'3000/tcp')).stdout.trim().split('\n')[0];
     async function ready(){
       for(let i=0;i<60;i++){
         try{if((await fetch(`http://${address}/healthz`,{signal:AbortSignal.timeout(2000)})).ok)return;}catch{}
@@ -27,7 +27,10 @@ async function main(){
     const data={wrong:{},fav:[1],seen:{1:{r:1,w:0}},rounds:[],session:null,settings:{count:10,excludedCats:[]}};
     const save=await fetch(`http://${address}/api/state`,{method:'PUT',headers:{'Content-Type':'application/json','X-Quiz-Request':'1',Cookie:cookie},body:JSON.stringify({revision:0,data})});
     assert.equal(save.status,200);
-    await docker('restart',name);await ready();
+    await docker('restart',name);
+    // Docker may allocate a different ephemeral host port on restart.
+    address=(await docker('port',name,'3000/tcp')).stdout.trim().split('\n')[0];
+    await ready();
     const saved=await fetch(`http://${address}/api/state`,{headers:{Cookie:cookie}});
     assert.equal(saved.status,200);assert.deepEqual((await saved.json()).data,data);
     console.log('PASS target architecture: login, SQLite save and restart persistence');
