@@ -31,6 +31,12 @@ async function main(){
     const saved=await fetch(`http://${address}/api/state`,{headers:{Cookie:cookie}});
     assert.equal(saved.status,200);assert.deepEqual((await saved.json()).data,data);
     console.log('PASS target architecture: login, SQLite save and restart persistence');
+  }catch(error){
+    const state=await docker('inspect','--format','{{json .State}}',name).catch(()=>({stdout:'Container unavailable'}));
+    const logs=await docker('logs','--tail','50',name).catch(e=>({stdout:e.stdout||'',stderr:e.stderr||''}));
+    console.error('Target container state:',state.stdout.trim());
+    console.error('Target container logs:',logs.stdout||logs.stderr||'(empty)');
+    throw error;
   }finally{
     await docker('rm','-f',name).catch(()=>{});await docker('volume','rm',volume).catch(()=>{});
   }
