@@ -31,6 +31,20 @@ jobs:
         env:
           IMAGE: fe-interview-quiz:git-${{ github.sha }}
         run: node scripts/test-deploy.cjs "$IMAGE"
+      - name: Enable ARM64 image execution
+        if: vars.QUIZ_IMAGE_PLATFORM == 'linux/arm64'
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+        with:
+          platforms: arm64
+      - name: Build target ARM64 image
+        if: vars.QUIZ_IMAGE_PLATFORM == 'linux/arm64'
+        env:
+          IMAGE: fe-interview-quiz:git-${{ github.sha }}
+        run: docker build --pull --platform linux/arm64 --tag "$IMAGE" .
+      - name: Test the actual target image
+        env:
+          IMAGE: fe-interview-quiz:git-${{ github.sha }}
+        run: node scripts/smoke-image.cjs "$IMAGE"
       - name: Export deployment image
         env:
           IMAGE: fe-interview-quiz:git-${{ github.sha }}
@@ -66,6 +80,7 @@ jobs:
           SSH_KEY: ${{ secrets.QUIZ_SSH_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.QUIZ_SSH_KNOWN_HOSTS }}
           DEPLOY_ROOT: ${{ vars.QUIZ_DEPLOY_ROOT }}
+          USE_SUDO: ${{ vars.QUIZ_DEPLOY_SUDO }}
           REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -87,4 +102,6 @@ jobs:
           scp "${ssh_args[@]}" -P "$SSH_PORT" release/image.tar.gz release/image.sha256 release/deploy.sh release/compose.production.yaml "$remote:$destination/"
           checksum=$(cut -d ' ' -f 1 release/image.sha256)
           [[ "$checksum" =~ ^[a-f0-9]{64}$ ]]
-          ssh "${ssh_args[@]}" -p "$SSH_PORT" "$remote" "bash '$destination/deploy.sh' '$DEPLOY_ROOT' '$REVISION' '$checksum'"
+          command="bash '$destination/deploy.sh' '$DEPLOY_ROOT' '$REVISION' '$checksum'"
+          if [[ "$USE_SUDO" == 'true' ]]; then command="sudo -n $command"; fi
+          ssh "${ssh_args[@]}" -p "$SSH_PORT" "$remote" "$command"

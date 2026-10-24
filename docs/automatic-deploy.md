@@ -1,6 +1,6 @@
 # 自动部署接入
 
-现有站点：`https://quiz.fhysy.com/`，服务器 `149.118.56.76`，现有 1Panel 编排 `fe-interview-quiz`，目录 `/opt/fe-interview-quiz`。SSH 用户、端口、数据库卷与网络须首次只读核对后再启用。
+现有站点：`https://quiz.fhysy.com/`，服务器 `149.118.56.76`，现有 1Panel 编排 `fe-interview-quiz`，目录 `/opt/fe-interview-quiz`。已只读确认 SSH 用户 ubuntu、端口 22、ARM64 架构，现有数据库卷为 `fe-interview-quiz_quiz_data`，网络为 `fe-interview-quiz_default`。
 
 ## 工作流程
 
@@ -8,7 +8,7 @@ main 推送或手动运行 Actions 后，先跑应用测试，再构建带提交
 
 启用部署后，通过校验主机公钥的 SSH 连接传输镜像，校验 SHA256 后加载。服务器沿用原 `.env` 与指定的现有数据卷；停止旧容器后复制完整 SQLite 数据，备份完成才更新。容器健康检查失败时恢复原镜像，数据卷不切换，也不自动用备份覆盖可能新增的数据。
 
-服务器不需要访问 GHCR 或 Docker Hub 来下载新应用镜像；镜像已在 CI 中构建，通过 SSH 传输。当前构建使用 GitHub Linux x86_64 runner；首次连接须确认服务器为 x86_64，其他架构需要调整构建配置后才可启用。
+服务器不需要访问 GHCR 或 Docker Hub 来下载新应用镜像；镜像已在 CI 中构建，通过 SSH 传输。CI 先在本机架构实测更新和回滚，再按 `QUIZ_IMAGE_PLATFORM=linux/arm64` 构建服务器镜像，并在 QEMU 中实测该 ARM64 镜像的登录、SQLite 保存和重启恢复。
 
 ## 首次配置
 
@@ -34,7 +34,7 @@ QUIZ_DATA_VOLUME=实际现有数据卷名
 | QUIZ_SSH_KEY | 专用部署私钥，由受控本地文件写入 Secret |
 | QUIZ_SSH_KNOWN_HOSTS | 已核对指纹的 SSH 主机公钥记录 |
 
-在 Actions variables 配置 `QUIZ_DEPLOY_ROOT=/opt/fe-interview-quiz`。完成 CI 与服务器检查后，设置 `QUIZ_DEPLOY_ENABLED=true` 才会实际部署。默认不部署，因此首次提交工作流可以先验证 Docker 构建和回滚。
+在 Actions variables 配置 `QUIZ_DEPLOY_ROOT=/opt/fe-interview-quiz`、`QUIZ_IMAGE_PLATFORM=linux/arm64`、`QUIZ_DEPLOY_SUDO=true`（ubuntu 使用既有免密 sudo 执行部署脚本）。完成 CI 与服务器检查后，设置 `QUIZ_DEPLOY_ENABLED=true` 才会实际部署。默认不部署，因此首次提交工作流可以先验证 Docker 构建和回滚。
 
 ## 使用和回退
 
