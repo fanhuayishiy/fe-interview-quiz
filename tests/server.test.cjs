@@ -114,3 +114,20 @@ test('existing legacy SQLite records load without overwriting source or revision
   const saved=await f.req('/api/state','PUT',{revision:8,data:loaded.data});assert.equal(saved.status,200);
   assert.equal((await saved.json()).revision,9);
 });
+test('public release metadata matches both pages and keeps its time after restart',async t=>{
+  const revision='abcdef0123456789abcdef0123456789abcdef01';
+  const f=await fixture(t,{release:{revision,updatedAt:'2026-10-24T18:30:00Z'}});
+  const response=await f.req('/api/version');assert.equal(response.status,200);
+  const metadata=await response.json();
+  assert.equal(metadata.version,require('../package.json').version);
+  assert.equal(metadata.revision,revision);
+  assert.equal(metadata.updatedAt,'2026-10-24T18:30:00.000Z');
+  assert.equal(metadata.updatedAtText,'2026-10-25 02:30');
+  for(const route of ['/','/index.html']){
+    const page=await (await f.req(route)).text();
+    assert.ok(page.includes('v'+metadata.version+' · abcdef0'));
+    assert.match(page,/2026-10-25 02:30（北京时间）/);
+    assert.match(page,/id="release-info"/);
+  }
+  await f.restart();assert.deepEqual(await (await f.req('/api/version')).json(),metadata);
+});

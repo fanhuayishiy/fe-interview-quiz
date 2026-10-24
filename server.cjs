@@ -2,18 +2,21 @@ const http=require('node:http');
 const {readFileSync}=require('node:fs');
 const {join,resolve}=require('node:path');
 const {openStore,validateData}=require('./lib/store.cjs');
+const {releaseInfo,renderRelease}=require('./lib/release.cjs');
 const root=__dirname;
 const html=readFileSync(join(root,'index.html'),'utf8');
 const questions=JSON.parse(html.match(/const QUESTIONS = (\[[^\r\n]+\]);\r?\n/)[1]);
 
 async function createApp(options={}){
+  const release=releaseInfo(html,options.release);
+  const page=renderRelease(html,release).replace('<!-- server-sync -->','<link rel="stylesheet" href="/sync.css"><script defer src="/sync-engine.js"></script><script defer src="/sync.js"></script>');
   const publicOrigin=new URL(options.publicOrigin||process.env.PUBLIC_URL||'http://localhost:3000').origin;
   const secure=options.secureCookie ?? process.env.COOKIE_SECURE!=='false';
   const store=await openStore({dbPath:options.dbPath||resolve(process.env.DATA_DIR||join(root,'data'),'quiz.sqlite'),username:options.username||process.env.ADMIN_USERNAME,password:options.password||process.env.ADMIN_PASSWORD,questions});
   const limit=options.loginLimit||10, attempts={count:0,until:0};
   const files={
-    '/':['text/html; charset=utf-8',()=>html.replace('<!-- server-sync -->','<link rel="stylesheet" href="/sync.css"><script defer src="/sync-engine.js"></script><script defer src="/sync.js"></script>')],
-    '/index.html':['text/html; charset=utf-8',()=>html.replace('<!-- server-sync -->','<link rel="stylesheet" href="/sync.css"><script defer src="/sync-engine.js"></script><script defer src="/sync.js"></script>')],
+    '/':['text/html; charset=utf-8',()=>page],
+    '/index.html':['text/html; charset=utf-8',()=>page],
     '/sync-engine.js':['text/javascript; charset=utf-8',()=>readFileSync(join(root,'public/sync-engine.js'))],
     '/sync.js':['text/javascript; charset=utf-8',()=>readFileSync(join(root,'public/sync.js'))],
     '/sync.css':['text/css; charset=utf-8',()=>readFileSync(join(root,'public/sync.css'))]
@@ -35,6 +38,7 @@ async function createApp(options={}){
     try{
       const path=new URL(req.url,'http://localhost').pathname;
       if(path==='/healthz' && req.method==='GET') return json(res,200,{ok:true});
+      if(path==='/api/version' && req.method==='GET') return json(res,200,release);
       if(!path.startsWith('/api/')){
         const file=files[path];
         if(!file||!['GET','HEAD'].includes(req.method)) return json(res,404,{error:'页面不存在'});

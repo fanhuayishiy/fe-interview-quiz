@@ -1,6 +1,6 @@
 {
   "name": "fe-interview-quiz",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "个人前端面试刷题与单账号云端记录",
   "engines": { "node": ">=22.13" },

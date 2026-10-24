@@ -1,5 +1,8 @@
 FROM node:24-bookworm-slim
+ARG APP_REVISION
+ARG APP_UPDATED_AT
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 DATA_DIR=/app/data
+ENV APP_REVISION=$APP_REVISION APP_UPDATED_AT=$APP_UPDATED_AT
 WORKDIR /app
 COPY --chown=node:node package.json server.cjs index.html ./
 COPY --chown=node:node lib ./lib

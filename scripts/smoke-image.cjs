@@ -22,6 +22,13 @@ async function main(){
       throw new Error('Target image did not become healthy');
     }
     await ready();
+    const releaseResponse=await fetch(`http://${address}/api/version`);
+    assert.equal(releaseResponse.status,200);
+    const release=await releaseResponse.json();
+    assert.equal(release.revision,image.slice('fe-interview-quiz:git-'.length));
+    assert.ok(Number.isFinite(Date.parse(release.updatedAt)));
+    const page=await (await fetch(`http://${address}/`)).text();
+    assert.ok(page.includes('v'+release.version+' · '+release.revision.slice(0,7)));
     const login=await fetch(`http://${address}/api/login`,{method:'POST',headers:{'Content-Type':'application/json','X-Quiz-Request':'1'},body:JSON.stringify({username:'ci',password})});
     assert.equal(login.status,200);const cookie=login.headers.get('set-cookie').split(';')[0];
     const data={wrong:{},fav:[1],seen:{1:{r:1,w:0}},rounds:[],session:null,settings:{count:10,excludedCats:[]}};
@@ -33,7 +40,9 @@ async function main(){
     await ready();
     const saved=await fetch(`http://${address}/api/state`,{headers:{Cookie:cookie}});
     assert.equal(saved.status,200);assert.deepEqual((await saved.json()).data,data);
-    console.log('PASS target architecture: login, SQLite save and restart persistence');
+    const afterRestart=await (await fetch(`http://${address}/api/version`)).json();
+    assert.deepEqual(afterRestart,release);
+    console.log('PASS target architecture: release metadata, login, SQLite save and restart persistence');
   }catch(error){
     const state=await docker('inspect','--format','{{json .State}}',name).catch(()=>({stdout:'Container unavailable'}));
     const logs=await docker('logs','--tail','50',name).catch(e=>({stdout:e.stdout||'',stderr:e.stderr||''}));
