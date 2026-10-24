@@ -7,10 +7,14 @@
 - [x] 新增 GitHub Actions 工作流，固定 action 提交号，部署默认关闭，配置完成后开启仓库变量。
 - [x] 新增生产 Compose 与服务器部署脚本，禁止隐式换卷、覆盖 .env、删除数据卷，使用服务器锁和 SSH 主机公钥校验。
 - [x] 新增容器实测与失败回滚集成测试，在 CI 验证 Docker 镜像、SQLite 持久化、旧版本恢复。
-- [ ] 更新部署说明和打包清单，测试与审查；拿到服务器信息后只读核对，再完成一次实际接入验证。
+- [x] 更新部署说明，测试与审查；只读核对现有服务后，完成一次实际接入、自动部署和数据保留验证。
 
 首次连接不需要用户在聊天里发送密码或私钥。服务器 .env 继续只在服务器保存。未取得地址及目录时可以完成代码，但无法声称自动上线已经启用。
 
-2026-10-24：已确认服务器 149.118.56.76、站点 https://quiz.fhysy.com/、原编排 fe-interview-quiz、目录 /opt/fe-interview-quiz。终端截图确认用户 ubuntu，SSH 端口及主机指纹待 sudo 检查。专用本地部署密钥已生成，尚未授权到服务器、尚未配置到 GitHub Secrets。
+2026-10-24：已确认服务器 149.118.56.76、站点 https://quiz.fhysy.com/、原编排 fe-interview-quiz、目录 /opt/fe-interview-quiz。用户 ubuntu，SSH 22，主机 ED25519 指纹与用户提供的一致。专用公钥已由用户授权，私钥与已核对主机公钥已加密存入 GitHub Actions Secrets。服务器为 ARM64，流水线已增加目标架构构建和实测。
 
 代码 01b0844 已推送，GitHub Actions 运行 40082719928 完整成功：应用检查、Bash 语法、Docker 构建、容器数据持久化、成功更新与失败回滚的代理网络连通、错误数据卷拒绝、镜像包导出上传。部署任务按 QUIZ_DEPLOY_ENABLED=false 跳过，生产未变更。
+
+最终接入：运行 40083614046 已完成构建、ARM64 镜像实测和真实 SSH 部署（第二次尝试仅补跑此前被关闭变量跳过的部署任务）。首次线上版本 0baeb9a082bac3441683c6e0dbcf03bd2fff6816，健康检查及站点均为 HTTP 200。新容器继续使用 fe-interview-quiz_quiz_data 和 fe-interview-quiz_default；数据库 revision115、已刷34题、错题3道、完成5轮、未完成练习与升级前完全一致，账号表也完全一致。
+
+服务器已保留首次接入前在线 SQLite 快照及配置备份，部署脚本另保留停机后的完整数据备份。现已启用 QUIZ_DEPLOY_ENABLED=true、QUIZ_IMAGE_PLATFORM=linux/arm64、QUIZ_DEPLOY_SUDO=true；后续正常推送 main 自动执行，无需人工打包。修复过跨架构容器测试重启后随机映射端口变化导致的测试误判，最终测试均通过。

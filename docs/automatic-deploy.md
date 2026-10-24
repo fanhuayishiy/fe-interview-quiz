@@ -2,6 +2,8 @@
 
 现有站点：`https://quiz.fhysy.com/`，服务器 `149.118.56.76`，现有 1Panel 编排 `fe-interview-quiz`，目录 `/opt/fe-interview-quiz`。已只读确认 SSH 用户 ubuntu、端口 22、ARM64 架构，现有数据库卷为 `fe-interview-quiz_quiz_data`，网络为 `fe-interview-quiz_default`。
 
+**当前状态：自动部署已启用。** 2026-10-24 首次真实部署成功，[流水线记录](https://github.com/fanhuayishiy/fe-interview-quiz/actions/runs/40083614046)。现有刷题数据、未完成练习和账号均与升级前一致。后续正常推送 main 即自动更新，不需要手工上传部署包。
+
 ## 工作流程
 
 main 推送或手动运行 Actions 后，先跑应用测试，再构建带提交号的 Docker 镜像。CI 使用真实容器验证登录、数据保存、重启持久化、代理网络保留、失败回滚及数据卷误配置保护，全部通过后生成镜像包。
