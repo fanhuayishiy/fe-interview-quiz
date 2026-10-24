@@ -1,0 +1,24 @@
+services:
+  quiz:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?请在 .env 中设置用户名}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请在 .env 中设置至少12位密码}
+      PUBLIC_URL: ${PUBLIC_URL:?请在 .env 中设置实际访问地址}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    ports:
+      - "127.0.0.1:${QUIZ_PORT:-3000}:3000"
+    volumes:
+      - quiz_data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+
+volumes:
+  quiz_data:

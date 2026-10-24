@@ -1,0 +1,90 @@
+name: Test, build and deploy quiz
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: quiz-production-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Test application and shell syntax
+        run: |
+          npm test
+          bash -n scripts/deploy.sh
+      - name: Build immutable image
+        env:
+          IMAGE: fe-interview-quiz:git-${{ github.sha }}
+        run: docker build --pull --tag "$IMAGE" .
+      - name: Test real container persistence and deployment rollback
+        env:
+          IMAGE: fe-interview-quiz:git-${{ github.sha }}
+        run: node scripts/test-deploy.cjs "$IMAGE"
+      - name: Export deployment image
+        env:
+          IMAGE: fe-interview-quiz:git-${{ github.sha }}
+        run: |
+          mkdir -p release
+          docker save "$IMAGE" | gzip > release/image.tar.gz
+          (cd release && sha256sum image.tar.gz > image.sha256)
+          cp scripts/deploy.sh compose.production.yaml release/
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: quiz-${{ github.sha }}
+          path: release/
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && vars.QUIZ_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: quiz-${{ github.sha }}
+          path: release
+      - name: Transfer and deploy verified image
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.QUIZ_SSH_HOST }}
+          SSH_PORT: ${{ secrets.QUIZ_SSH_PORT }}
+          SSH_USER: ${{ secrets.QUIZ_SSH_USER }}
+          SSH_KEY: ${{ secrets.QUIZ_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.QUIZ_SSH_KNOWN_HOSTS }}
+          DEPLOY_ROOT: ${{ vars.QUIZ_DEPLOY_ROOT }}
+          REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          SSH_PORT=${SSH_PORT:-22}
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9.-]+$ && "$SSH_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]
+          [[ "$SSH_PORT" =~ ^[0-9]+$ && "$SSH_PORT" -ge 1 && "$SSH_PORT" -le 65535 ]]
+          [[ "$DEPLOY_ROOT" =~ ^/[A-Za-z0-9_./-]+$ && "$DEPLOY_ROOT" != / && ! "$DEPLOY_ROOT" =~ (^|/)\.\.?(/|$) ]]
+          [[ -n "$SSH_KEY" && -n "$SSH_KNOWN_HOSTS" ]]
+          key="$RUNNER_TEMP/quiz-deploy-key"
+          hosts="$RUNNER_TEMP/quiz-known-hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          umask 077
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$hosts"
+          ssh_args=(-i "$key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts" -o ConnectTimeout=20)
+          remote="$SSH_USER@$SSH_HOST"
+          destination="$DEPLOY_ROOT/releases/$REVISION"
+          ssh "${ssh_args[@]}" -p "$SSH_PORT" "$remote" "test -d '$DEPLOY_ROOT' && test -f '$DEPLOY_ROOT/.env' && mkdir -p '$destination'"
+          scp "${ssh_args[@]}" -P "$SSH_PORT" release/image.tar.gz release/image.sha256 release/deploy.sh release/compose.production.yaml "$remote:$destination/"
+          checksum=$(cut -d ' ' -f 1 release/image.sha256)
+          [[ "$checksum" =~ ^[a-f0-9]{64}$ ]]
+          ssh "${ssh_args[@]}" -p "$SSH_PORT" "$remote" "bash '$destination/deploy.sh' '$DEPLOY_ROOT' '$REVISION' '$checksum'"

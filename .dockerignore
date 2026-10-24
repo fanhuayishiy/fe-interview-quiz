@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+!.env.example
+node_modules
+data
+backups
+artifacts
+tests
+docs
+scripts
+.github
+*.sqlite*
+*.tar.gz

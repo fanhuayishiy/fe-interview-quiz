@@ -1,0 +1,26 @@
+name: ${COMPOSE_PROJECT_NAME:?请填写现有 Compose 项目名}
+services:
+  quiz:
+    image: ${QUIZ_IMAGE:?镜像版本由部署流水线提供}
+    restart: unless-stopped
+    init: true
+    environment:
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?请保留现有用户名}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请保留现有密码配置}
+      PUBLIC_URL: ${PUBLIC_URL:?请填写实际访问地址}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    ports:
+      - "127.0.0.1:${QUIZ_PORT:-3000}:3000"
+    volumes:
+      - quiz_data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+volumes:
+  quiz_data:
+    external: true
+    name: ${QUIZ_DATA_VOLUME:?必须填写现有数据库卷名，不得猜测}
